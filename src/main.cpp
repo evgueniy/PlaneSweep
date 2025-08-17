@@ -2,7 +2,8 @@
 #include "cam_params.hpp"
 #include "constants.hpp"
 #include "graph.h"
-
+#include <chrono>
+#include <thread>
 #include <cstdio>
 #include <vector>
 #include <opencv2/core/core.hpp>
@@ -10,8 +11,9 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
-
+//#include <math>
 #include <string>
+
 
 #define SHRT_MAX 32767
 
@@ -87,11 +89,11 @@ std::vector<cv::Mat> sweeping_plane(cam const ref, std::vector<cam> const &cam_v
 		if (cam.name == ref.name)
 			continue;
 
-		std::cout << "Cam: " << cam.name << std::endl;
+		//std::cout << "Cam: " << cam.name << std::endl;
 		// For each pixel and candidate: (i) calculate projection index, (ii) calculate cost against reference, (iii) store minimum cost
 		for (int zi = 0; zi < ZPlanes; zi++)
 		{
-			std::cout << "Plane " << zi << std::endl;
+			//std::cout << "Plane " << zi << std::endl;
 			for (int y = 0; y < ref.height; y++)
 			{
 				for (int x = 0; x < ref.width; x++)
@@ -298,10 +300,10 @@ cv::Mat depth_estimation_by_graph_cut_sWeight(std::vector<cv::Mat> const& cost_c
 
 	return depth;
 }
-inline bool costs_are_equals(const std::vector<cv::Mat>& cube1,
-	const std::vector<cv::Mat>& cube2,
-	float tolerance = 1e-6f)
-{
+/*
+*  function to check if 2 cost cubes have identical values with some tolerance
+*/
+inline bool costs_are_equals(const std::vector<cv::Mat>& cube1, const std::vector<cv::Mat>& cube2, float tolerance = 1e-6f) {
 	if (cube1.size() != cube2.size()) {
 		printf("Cubes do not have the same size\n");
 		return false;
@@ -326,39 +328,27 @@ inline bool costs_are_equals(const std::vector<cv::Mat>& cube1,
 
 				if (std::fabs(a - b) > tolerance) {
 					printf("Z-> %d - Cube[Y-> %d][X-> %d] - Host: %f | Cuda: %f \n",z,y,x,a,b);
-					//return false;
+					return false;
 				} 
 			}
 		}
 	}
 	return true;
 }
-int main()
-{
-	// Read cams
-	std::vector<cam> cam_vector = read_cams("data");
-	// prep data for device
+template <class T>
+inline bool copyDataForDevice(std::vector<cam> cam_vector, T* p_ref, T* p_cam, uint8_t* luma, unsigned ref_idx) {
+	auto ref = cam_vector.at(ref_idx);
+	int idx = 0;
 	const int width = 1920;
 	const int height = 1080;
-	double p_ref[21];
-	double p_cam[63];
-	cam ref = cam_vector.at(0);
-	uint8_t* luma = new uint8_t[width*height*4];
-	std::vector<cv::Mat> cost_cube;
-	std::vector<cv::Mat> v_cost_cube_cuda(ZPlanes);
-	float* cost_cube_cuda;
-	cv::Mat depth;
 	// prep data array for device
-	memcpy(p_ref, ref.p.K_inv.data(), 9 * sizeof(double));
-	memcpy(p_ref + 9, ref.p.R_inv.data(), 9 * sizeof(double));
-	memcpy(p_ref + 18, ref.p.t_inv.data(), 3 * sizeof(double));
-	
-	int idx = 0;
-	printf("?? \n");
+	memcpy(p_ref, ref.p.K_inv.data(), 9 * sizeof(T));
+	memcpy(p_ref + 9, ref.p.R_inv.data(), 9 * sizeof(T));
+	memcpy(p_ref + 18, ref.p.t_inv.data(), 3 * sizeof(T));
 	for (auto& cam : cam_vector) {
 		printf("Cam: %d\n", idx);
 		int offset = height * width * idx;
-		memcpy(luma + offset, cam.YUV[0].data, height*width*sizeof(uint8_t));
+		memcpy(luma + offset, cam.YUV[0].data, height * width * sizeof(uint8_t));
 		printf("Memcpy of luma: %d\n", idx);
 		if (!cam_vector.at(idx).YUV[0].isContinuous()) {
 			printf("Cam %d is not continuous\n", idx);
@@ -368,14 +358,14 @@ int main()
 			++idx;
 			continue;
 		}
-		memcpy(p_cam + (21 * (idx - 1)), cam.p.K.data(), 9 * sizeof(double));
-		memcpy(p_cam + 9 + (21 * (idx - 1)), cam.p.R.data(), 9 * sizeof(double));
-		memcpy(p_cam + 18 + (21 * (idx - 1)), cam.p.t.data(), 3 * sizeof(double));
+		memcpy(p_cam + (21 * (idx - 1)), cam.p.K.data(), 9 * sizeof(T));
+		memcpy(p_cam + 9 + (21 * (idx - 1)), cam.p.R.data(), 9 * sizeof(T));
+		memcpy(p_cam + 18 + (21 * (idx - 1)), cam.p.t.data(), 3 * sizeof(T));
 		idx++;
 	}
-	printf("??? \n");
+
 	for (int cam_num = 0; cam_num < cam_vector.size(); cam_num++) {
-		bool isRef = cam_num == 0;
+		bool isRef = cam_num == ref_idx;
 		double* c = isRef ? p_ref : p_cam + 21 * (cam_num - 1);
 		auto K_v = isRef ? cam_vector.at(cam_num).p.K_inv : cam_vector.at(cam_num).p.K;
 		auto R_v = isRef ? cam_vector.at(cam_num).p.R_inv : cam_vector.at(cam_num).p.R;
@@ -384,7 +374,7 @@ int main()
 			if (K_v.at(K) != c[K]) {
 				printf("Wrong K value at cam: %d on index: %d\n", cam_num, K);
 				printf("---Expected: %f got %f\n", K_v.at(K), c[K]);
-				goto end;
+				return false;
 			}
 		}
 		c += 9;
@@ -392,7 +382,7 @@ int main()
 			if (R_v.at(R) != c[R]) {
 				printf("Wrong K value at cam: %d on index: %d\n", cam_num, R);
 				printf("---Expected: %f got %f\n", R_v.at(R), c[R]);
-				goto end;
+				return false;
 			}
 		}
 		c += 9;
@@ -400,7 +390,7 @@ int main()
 			if (t_v.at(t) != c[t]) {
 				printf("Wrong t value at cam: %d on index: %d\n", cam_num, t);
 				printf("---Expected: %f got %f\n", t_v.at(t), c[t]);
-				goto end;
+				return false;
 			}
 		}
 		for (int i = 0; i < height; i++) {
@@ -409,41 +399,79 @@ int main()
 				idx = (i * width + j) + offset;
 				if (cam_vector.at(cam_num).YUV[0].at<uint8_t>(i, j) != luma[idx]) {
 					printf("Wrong value at Mat[%d][%d]: %d - Array[%d]: %d\n", i, j,
-						cam_vector.at(cam_num).YUV[0].at<uint8_t>(i, j),idx, luma[idx]);
-					goto end;
+						cam_vector.at(cam_num).YUV[0].at<uint8_t>(i, j), idx, luma[idx]);
+					return false;
 				}
 			}
 		}
 	}
-	printf("All values are correctly copied\n");
+	return true;
+}
+
+int main()
+{
+	// Read cams
+	std::vector<cam> cam_vector = read_cams("data");
+	std::vector<cv::Mat> cost_cube;
+	cam ref = cam_vector.at(0);
+	// prep data for device
+	const int width = 1920;
+	const int height = 1080;
+	float cuda_ms_time_d = 0, cuda_ms_time_f = 0;
+	double p_ref[21];
+	float p_ref_f[21];
+	double p_cam[63];
+	float p_cam_f[63];
+	uint8_t* luma = new uint8_t[width*height*4];
+	std::vector<cv::Mat> v_cost_cube_cuda_d(ZPlanes), v_cost_cube_cuda_f(ZPlanes);
+	float* cost_cube_cuda_d, *cost_cube_cuda_f;
+	cv::Mat depth;
+	bool copySucess = copyDataForDevice(cam_vector,p_ref, p_cam, luma, 0);
+	if (copySucess) {
+		printf("All values are correctly copied!\n");
+		for (int i = 0; i < 21; ++i) p_ref_f[i] = static_cast<float>(p_ref[i]);
+		for (int i = 0; i < 63; ++i) p_cam_f[i] = static_cast<float>(p_cam[i]);
+	}
+	else {
+		printf("Error in value copy\n");
+	}
 	// calling CUDAfunction sweeping plane
-	cost_cube_cuda = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5);
+	cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
+	//cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
+	cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
 	for (int zi = 0; zi < ZPlanes; zi++){
-		v_cost_cube_cuda[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
+		v_cost_cube_cuda_d[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
+		v_cost_cube_cuda_f[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
 		for (int y = 0; y < height; y++){
 			for (int x = 0; x < width; x++){
-				v_cost_cube_cuda[zi].at<float>(y, x) = cost_cube_cuda[y * width + x + (zi * width * height)];
+				v_cost_cube_cuda_d[zi].at<float>(y, x) = cost_cube_cuda_d[y * width + x + (zi * width * height)];
+				v_cost_cube_cuda_f[zi].at<float>(y, x) = cost_cube_cuda_f[y * width + x + (zi * width * height)];
 			}
 		}
 	}
+	/*if (costs_are_equals(v_cost_cube_cuda_d, v_cost_cube_cuda_f)) printf("Values are similar for both kernels\n");
+	else printf("Wrong cuda values for kernels\n");*/
 	printf("cost cuda copied\n");
-	 //Sweeping algorithm for camera 0
+	 //Sweeping algorithm for camera 0 on host
+	auto start = std::chrono::high_resolution_clock::now();
 	cost_cube = sweeping_plane(ref, cam_vector, 5);
-	if (costs_are_equals(cost_cube, v_cost_cube_cuda)) printf("Values are similar\n");
+	auto stop = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
+	double mag_order_d = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_d);
+	double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
+	printf("Host function execution time: %lld ms\n", duration.count());
+	printf("Device double function execution time: %f ms\n", cuda_ms_time_d);
+	printf("Faster by %f order of magnitude\n", log10(mag_order_d));
+	printf("Host function execution time: %lld ms\n", duration.count());
+	printf("Device float  function execution time: %f ms\n", cuda_ms_time_f);
+	printf("Faster by %f order of magnitude\n", log10(mag_order_f));
+	if (costs_are_equals(cost_cube, v_cost_cube_cuda_d)) printf("Values are similar\n");
 	else printf("Wrong cuda values\n");
-	//printf("Value 0: %f - %f\n", cost_cube[0].at<float>(0, 0), cost_cube_cuda[0]);
-	/*for (int zi = 0; zi < ZPlanes; zi++) {
-		for (int y = 0; y < height; y++) {
-			for (int x = 0; x < width; x++) {
-				printf("Orig: zi: %d - y: %d - x: %d = %f\n", zi, y,x, cost_cube[zi].at<float>(y, x));
-				printf("Cuda: zi: %d - y: %d - x: %d = %f\n", zi, y,x, v_cost_cube_cuda[zi].at<float>(y, x));
-			}
-		}
-	}*/
+	
 	// Use graph cut to generate depth map 
 	// Cleaner results, long compute time
 	//depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
-	depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda);
+	depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_d);
 
 	// Find min cost and generate depth map
 	// Faster result, low quality

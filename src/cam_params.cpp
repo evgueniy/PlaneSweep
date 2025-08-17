@@ -87,12 +87,3 @@ std::vector<params<double>> get_cam_params()
 
     return ret;
 }
-void vector_cams_params_to_pod(double* p_cams,const params<double>& ref_cam,const std::vector<params<double>>& v_cam) {
-    // gather info
-    for (auto& cam : v_cam) {
-        
-    }
-}
-void vector_ref_cam_params_to_pod(double* p_ref_cam, params<double>& ref_cam) {
-   
-}
