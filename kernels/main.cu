@@ -13,9 +13,6 @@ __global__ void dev_test_vecAdd(int* A, int* B, int* C, int N)
 	C[i] = A[i] + B[i];
 }
 
-//__device__ void debugTrap() { asm("brkpt;"); }  used 
-
-// This pragma tells the compiler it is allowed to fuse operations like a*b+c
 
 __global__ void sweeping_plane_device_opti(const uint8_t* __restrict__ luma, float* __restrict__ cost_cube, int height, int width, int n_cam,
     int zplanes, int window) {
