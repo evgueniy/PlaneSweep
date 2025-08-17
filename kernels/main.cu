@@ -16,7 +16,7 @@ __global__ void dev_test_vecAdd(int* A, int* B, int* C, int N)
 //__device__ void debugTrap() { asm("brkpt;"); }  used 
 
 // This pragma tells the compiler it is allowed to fuse operations like a*b+c
-#pragma STDC FP_CONTRACT ON
+
 __global__ void sweeping_plane_device_opti(const uint8_t* __restrict__ luma, float* __restrict__ cost_cube, int height, int width, int n_cam,
     int zplanes, int window) {
 
@@ -32,11 +32,11 @@ __global__ void sweeping_plane_device_opti(const uint8_t* __restrict__ luma, flo
         for (int zi = 0; zi < zplanes; zi++) {
             // Calculate z from ZNear, ZFar and ZPlanes (projective transformation) (zi = 0, z = ZFar)
             double z = ZNear * ZFar / (ZNear + (((double)zi / (double)zplanes) * (ZFar - ZNear)));
-            // (FMA) 2D ref camera point to 3D in ref camera coordinates (p * K_inv)
+            // 2D ref camera point to 3D in ref camera coordinates (p * K_inv)
             double* ref_K_inv = cam_param_array;
-            double X_ref = (fma(ref_K_inv[0], (double)idx_x, fma(ref_K_inv[1], (double)idx_y, ref_K_inv[2]))) * z;
-            double Y_ref = (fma(ref_K_inv[3], (double)idx_x, fma(ref_K_inv[4], (double)idx_y, ref_K_inv[5]))) * z;
-            double Z_ref = (fma(ref_K_inv[6], (double)idx_x, fma(ref_K_inv[7], (double)idx_y, ref_K_inv[8]))) * z;
+            double X_ref = fma((fma(ref_K_inv[0], (double)idx_x, fma(ref_K_inv[1], (double)idx_y, ref_K_inv[2]))) , z, 0.0);
+            double Y_ref = fma((fma(ref_K_inv[3], (double)idx_x, fma(ref_K_inv[4], (double)idx_y, ref_K_inv[5]))) , z, 0.0);
+            double Z_ref = fma((fma(ref_K_inv[6], (double)idx_x, fma(ref_K_inv[7], (double)idx_y, ref_K_inv[8]))) , z, 0.0);
             // 3D in ref camera coordinates to 3D world
             double* ref_R_inv = ref_K_inv + 9;
             double* ref_t_inv = ref_R_inv + 9;
@@ -56,6 +56,78 @@ __global__ void sweeping_plane_device_opti(const uint8_t* __restrict__ luma, flo
             const double inv_Z_proj = 1.0 / Z_proj;
             double x_proj = fma(cam_K[0], X_proj * inv_Z_proj, fma(cam_K[1], Y_proj * inv_Z_proj, cam_K[2]));
             double y_proj = fma(cam_K[3], X_proj * inv_Z_proj, fma(cam_K[4], Y_proj * inv_Z_proj, cam_K[5]));
+            //double z_proj = Z_proj;
+
+            x_proj = x_proj < 0 || x_proj >= width ? 0 : roundf(x_proj);
+            y_proj = y_proj < 0 || y_proj >= height ? 0 : roundf(y_proj);
+            // (ii) calculate cost against reference
+                    // Calculating cost in a window
+            float cost = 0.0f;
+            float cc = 0.0f;
+            for (int k = -window / 2; k <= window / 2; k++)
+            {
+                for (int l = -window / 2; l <= window / 2; l++)
+                {
+                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
+
+                    int proj_x_win = (int)x_proj + l;
+                    int proj_y_win = (int)y_proj + k;
+
+                    if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
+                    // Y
+                    int offset = cam * width * height;
+                    cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
+                    cc += 1.0f;
+                }
+            }
+            cost /= cc;
+            //  (iii) store minimum cost (arranged as cost images, e.g., first image = cost of every pixel for the first candidate)
+            // only the minimum cost for all the cameras is stored
+            cost_cube[idx + (width * height * zi)] = fminf(cost_cube[idx + (width * height * zi)], cost);
+        }
+    }
+}
+
+
+__global__ void sweeping_plane_device_opti_float(const uint8_t* __restrict__ luma, float* __restrict__ cost_cube, int height, int width, int n_cam,
+    int zplanes, int window) {
+
+    const int idx_x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int idx_y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (idx_x >= width || idx_y >= height) return;
+    const int idx = idx_y * width + idx_x;
+    const float ZNear = 0.3f;
+    const float ZFar = 1.1f;
+
+    for (int cam = 1; cam < n_cam; cam++) {
+        for (int zi = 0; zi < zplanes; zi++) {
+            // Calculate z from ZNear, ZFar and ZPlanes (projective transformation) (zi = 0, z = ZFar)
+            float z = ZNear * ZFar / (ZNear + (((float)zi / (float)zplanes) * (ZFar - ZNear)));
+            // (FMA) 2D ref camera point to 3D in ref camera coordinates (p * K_inv)
+            float* ref_K_inv = cam_param_array_f;
+            float X_ref = fma((fma(ref_K_inv[0], (float)idx_x, fma(ref_K_inv[1], (float)idx_y, ref_K_inv[2]))), z, 0.0f);
+            float Y_ref = fma((fma(ref_K_inv[3], (float)idx_x, fma(ref_K_inv[4], (float)idx_y, ref_K_inv[5]))), z, 0.0f);
+            float Z_ref = fma((fma(ref_K_inv[6], (float)idx_x, fma(ref_K_inv[7], (float)idx_y, ref_K_inv[8]))), z, 0.0f);
+            // 3D in ref camera coordinates to 3D world
+            float* ref_R_inv = ref_K_inv + 9;
+            float* ref_t_inv = ref_R_inv + 9;
+            float X = fma(ref_R_inv[0], X_ref, fma(ref_R_inv[1], Y_ref, fma(ref_R_inv[2], Z_ref, -ref_t_inv[0])));
+            float Y = fma(ref_R_inv[3], X_ref, fma(ref_R_inv[4], Y_ref, fma(ref_R_inv[5], Z_ref, -ref_t_inv[1])));
+            float Z = fma(ref_R_inv[6], X_ref, fma(ref_R_inv[7], Y_ref, fma(ref_R_inv[8], Z_ref, -ref_t_inv[2])));
+            // cam data pointer
+            float* cam_K = (ref_t_inv + 3) + 21 * (cam - 1);
+            float* cam_R = cam_K + 9;
+            float* cam_t = cam_R + 9;
+            // 3D world to projected camera 3D coordinates
+            float X_proj = fma(cam_R[0], X, fma(cam_R[1], Y, fma(cam_R[2], Z, -cam_t[0])));
+            float Y_proj = fma(cam_R[3], X, fma(cam_R[4], Y, fma(cam_R[5], Z, -cam_t[1])));
+            float Z_proj = fma(cam_R[6], X, fma(cam_R[7], Y, fma(cam_R[8], Z, -cam_t[2])));
+            // Projected camera 3D coordinates to projected camera 2D coordinates
+            // inverse of Z_proj to use multiplications of fma
+            const float inv_Z_proj = 1.0 / Z_proj;
+            float x_proj = fma(cam_K[0], X_proj * inv_Z_proj, fma(cam_K[1], Y_proj * inv_Z_proj, cam_K[2]));
+            float y_proj = fma(cam_K[3], X_proj * inv_Z_proj, fma(cam_K[4], Y_proj * inv_Z_proj, cam_K[5]));
             //double z_proj = Z_proj;
 
             x_proj = x_proj < 0 || x_proj >= width ? 0 : roundf(x_proj);
@@ -270,34 +342,36 @@ __global__ void sweeping_plane_device_shared(const uint8_t* __restrict__ luma, f
         for (int zi = 0; zi < zplanes; zi++) {
             // Calculate z from ZNear, ZFar and ZPlanes (projective transformation) (zi = 0, z = ZFar)
             double z = ZNear * ZFar / (ZNear + (((double)zi / (double)zplanes) * (ZFar - ZNear)));
-            // 2D ref camera point to 3D in ref camera coordinates (p * K_inv)
+            // (FMA) 2D ref camera point to 3D in ref camera coordinates (p * K_inv)
             double* ref_K_inv = cam_param_array;
-            double X_ref = (ref_K_inv[0] * idx_x + ref_K_inv[1] * idx_y + ref_K_inv[2]) * z;
-            double Y_ref = (ref_K_inv[3] * idx_x + ref_K_inv[4] * idx_y + ref_K_inv[5]) * z;
-            double Z_ref = (ref_K_inv[6] * idx_x + ref_K_inv[7] * idx_y + ref_K_inv[8]) * z;
+            double X_ref = (fma(ref_K_inv[0], (double)idx_x, fma(ref_K_inv[1], (double)idx_y, ref_K_inv[2]))) * z;
+            double Y_ref = (fma(ref_K_inv[3], (double)idx_x, fma(ref_K_inv[4], (double)idx_y, ref_K_inv[5]))) * z;
+            double Z_ref = (fma(ref_K_inv[6], (double)idx_x, fma(ref_K_inv[7], (double)idx_y, ref_K_inv[8]))) * z;
             // 3D in ref camera coordinates to 3D world
             double* ref_R_inv = ref_K_inv + 9;
             double* ref_t_inv = ref_R_inv + 9;
-            double X = ref_R_inv[0] * X_ref + ref_R_inv[1] * Y_ref + ref_R_inv[2] * Z_ref - ref_t_inv[0];
-            double Y = ref_R_inv[3] * X_ref + ref_R_inv[4] * Y_ref + ref_R_inv[5] * Z_ref - ref_t_inv[1];
-            double Z = ref_R_inv[6] * X_ref + ref_R_inv[7] * Y_ref + ref_R_inv[8] * Z_ref - ref_t_inv[2];
+            double X = fma(ref_R_inv[0], X_ref, fma(ref_R_inv[1], Y_ref, fma(ref_R_inv[2], Z_ref, -ref_t_inv[0])));
+            double Y = fma(ref_R_inv[3], X_ref, fma(ref_R_inv[4], Y_ref, fma(ref_R_inv[5], Z_ref, -ref_t_inv[1])));
+            double Z = fma(ref_R_inv[6], X_ref, fma(ref_R_inv[7], Y_ref, fma(ref_R_inv[8], Z_ref, -ref_t_inv[2])));
             // cam data pointer
             double* cam_K = (ref_t_inv + 3) + 21 * (cam - 1);
             double* cam_R = cam_K + 9;
             double* cam_t = cam_R + 9;
             // 3D world to projected camera 3D coordinates
-            double X_proj = cam_R[0] * X + cam_R[1] * Y + cam_R[2] * Z - cam_t[0];
-            double Y_proj = cam_R[3] * X + cam_R[4] * Y + cam_R[5] * Z - cam_t[1];
-            double Z_proj = cam_R[6] * X + cam_R[7] * Y + cam_R[8] * Z - cam_t[2];
+            double X_proj = fma(cam_R[0], X, fma(cam_R[1], Y, fma(cam_R[2], Z, -cam_t[0])));
+            double Y_proj = fma(cam_R[3], X, fma(cam_R[4], Y, fma(cam_R[5], Z, -cam_t[1])));
+            double Z_proj = fma(cam_R[6], X, fma(cam_R[7], Y, fma(cam_R[8], Z, -cam_t[2])));
             // Projected camera 3D coordinates to projected camera 2D coordinates
-            double x_proj = (cam_K[0] * X_proj / Z_proj + cam_K[1] * Y_proj / Z_proj + cam_K[2]);
-            double y_proj = (cam_K[3] * X_proj / Z_proj + cam_K[4] * Y_proj / Z_proj + cam_K[5]);
+            // inverse of Z_proj to use multiplications of fma
+            const double inv_Z_proj = 1.0 / Z_proj;
+            double x_proj = fma(cam_K[0], X_proj * inv_Z_proj, fma(cam_K[1], Y_proj * inv_Z_proj, cam_K[2]));
+            double y_proj = fma(cam_K[3], X_proj * inv_Z_proj, fma(cam_K[4], Y_proj * inv_Z_proj, cam_K[5]));
             //double z_proj = Z_proj;
 
             x_proj = x_proj < 0 || x_proj >= width ? 0 : roundf(x_proj);
             y_proj = y_proj < 0 || y_proj >= height ? 0 : roundf(y_proj);
             // (ii) calculate cost against reference
-            // Calculating cost in a window stored in shared mem
+                    // Calculating cost in a window
             float cost = 0.0f;
             float cc = 0.0f;
             for (int k = -window / 2; k <= window / 2; k++) {
@@ -446,7 +520,7 @@ float* wrap_sweeping_plane_device(T* h_ref_cam, T* h_cams, uint8_t* h_luma, cons
             );
     }
     else {
-        sweeping_plane_device_float << <blocks, threads >> > (
+        sweeping_plane_device_opti_float << <blocks, threads >> > (
             d_luma,
             d_cost_cube,
             height,

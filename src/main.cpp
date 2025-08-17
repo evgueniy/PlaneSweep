@@ -13,9 +13,33 @@
 #include <opencv2/opencv.hpp>
 //#include <math>
 #include <string>
-
+#include <fstream> 
 
 #define SHRT_MAX 32767
+/*
+Function to store cost cube because it takes too long to compare results
+*/
+void store_cost_cube(const std::vector<cv::Mat>& cost_cube, const std::string& filename) {
+	std::ofstream outFile(filename, std::ios::binary);
+	if (!outFile) {
+		printf("Error: Cannot open file for writing: %s\n", filename.c_str());
+		return;
+	}
+
+	size_t planes = cost_cube.size();
+	int height = cost_cube[0].rows;
+	int width = cost_cube[0].cols;
+
+	outFile.write(reinterpret_cast<const char*>(&planes), sizeof(planes));
+	outFile.write(reinterpret_cast<const char*>(&height), sizeof(height));
+	outFile.write(reinterpret_cast<const char*>(&width), sizeof(width));
+
+	for (const auto& mat : cost_cube) {
+		outFile.write(reinterpret_cast<const char*>(mat.data), mat.total() * mat.elemSize());
+	}
+	printf("Cost cube saved to %s\n", filename.c_str());
+}
+
 
 std::vector<cam> read_cams(std::string const &folder)
 {
@@ -176,6 +200,7 @@ std::vector<cv::Mat> sweeping_plane(cam const ref, std::vector<cam> const &cam_v
 	// }
 	return cost_cube;
 }
+
 
 cv::Mat find_min(std::vector<cv::Mat> const &cost_cube)
 {
@@ -408,6 +433,31 @@ inline bool copyDataForDevice(std::vector<cam> cam_vector, T* p_ref, T* p_cam, u
 	return true;
 }
 
+std::vector<cv::Mat> load_or_compute_cost_cube(const std::string& filename, cam const ref, std::vector<cam> const& cam_vector, int window) {
+	std::ifstream inFile(filename, std::ios::binary);
+	if (inFile) {
+		printf("Cache found. Loading cost cube from %s\n", filename.c_str());
+		size_t planes;
+		int height, width;
+
+		inFile.read(reinterpret_cast<char*>(&planes), sizeof(planes));
+		inFile.read(reinterpret_cast<char*>(&height), sizeof(height));
+		inFile.read(reinterpret_cast<char*>(&width), sizeof(width));
+
+		std::vector<cv::Mat> cost_cube(planes);
+		for (size_t i = 0; i < planes; ++i) {
+			cost_cube[i] = cv::Mat(height, width, CV_32FC1);
+			inFile.read(reinterpret_cast<char*>(cost_cube[i].data), cost_cube[i].total() * cost_cube[i].elemSize());
+		}
+		return cost_cube;
+	}
+	else {
+		printf("No cache found. Computing cost cube with sweeping_plane...\n");
+		std::vector<cv::Mat> cost_cube = sweeping_plane(ref, cam_vector, window);
+		store_cost_cube(cost_cube, filename);
+		return cost_cube;
+	}
+}
 int main()
 {
 	// Read cams
@@ -418,6 +468,7 @@ int main()
 	const int width = 1920;
 	const int height = 1080;
 	float cuda_ms_time_d = 0, cuda_ms_time_f = 0;
+	float total_cuda_time_d = 0, total_cuda_time_f = 0;
 	double p_ref[21];
 	float p_ref_f[21];
 	double p_cam[63];
@@ -429,58 +480,83 @@ int main()
 	bool copySucess = copyDataForDevice(cam_vector,p_ref, p_cam, luma, 0);
 	if (copySucess) {
 		printf("All values are correctly copied!\n");
-		//for (int i = 0; i < 21; ++i) p_ref_f[i] = static_cast<float>(p_ref[i]);
-		//for (int i = 0; i < 63; ++i) p_cam_f[i] = static_cast<float>(p_cam[i]);
+		for (int i = 0; i < 21; ++i) p_ref_f[i] = static_cast<float>(p_ref[i]);
+		for (int i = 0; i < 63; ++i) p_cam_f[i] = static_cast<float>(p_cam[i]);
 	}
 	else {
 		printf("Error in value copy\n");
 	}
-	// calling CUDAfunction sweeping plane
-	cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
+	// calling CUDAfunction sweeping plane double
+	for (int i = 0; i < 5; ++i) {
+		cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
+		total_cuda_time_d += cuda_ms_time_d;
+	} 
+
+	// calling CUDAfunction sweeping plane float
+	for (int i = 0; i < 5; ++i) {
+		cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
+		total_cuda_time_f += cuda_ms_time_f;
+	}
+	//cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, total_cuda_time);
+	//total_cuda_time *= 5;
 	//cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
-	//cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
+	
 	for (int zi = 0; zi < ZPlanes; zi++){
 		v_cost_cube_cuda_d[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
-		//v_cost_cube_cuda_f[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
+		v_cost_cube_cuda_f[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
 		for (int y = 0; y < height; y++){
 			for (int x = 0; x < width; x++){
 				v_cost_cube_cuda_d[zi].at<float>(y, x) = cost_cube_cuda_d[y * width + x + (zi * width * height)];
-				//v_cost_cube_cuda_f[zi].at<float>(y, x) = cost_cube_cuda_f[y * width + x + (zi * width * height)];
+				v_cost_cube_cuda_f[zi].at<float>(y, x) = cost_cube_cuda_f[y * width + x + (zi * width * height)];
 			}
 		}
 	}
-	/*if (costs_are_equals(v_cost_cube_cuda_d, v_cost_cube_cuda_f)) printf("Values are similar for both kernels\n");
-	else printf("Wrong cuda values for kernels\n");*/
+	//if (costs_are_equals(v_cost_cube_cuda_d, v_cost_cube_cuda_f)) printf("Values are similar for both kernels\n");
+	//else printf("Wrong cuda values for kernels\n");
 	printf("cost cuda copied\n");
-	 //Sweeping algorithm for camera 0 on host
+	// //Sweeping algorithm for camera 0 on host
+	//const long  avg_cpu = 270201; // computed over 5 time and kepts here because it is really long to compute
 	auto start = std::chrono::high_resolution_clock::now();
+	////for(int i  = 0; i<5; ++i) cost_cube = sweeping_plane(ref, cam_vector, 5); //used to do an avg of execution time
+	//cost_cube = load_or_compute_cost_cube("cost_cube.cache", ref, cam_vector, 5);
 	cost_cube = sweeping_plane(ref, cam_vector, 5);
 	auto stop = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-	double mag_order_d = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_d);
-	//double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
-	printf("Host function execution time: %lld ms\n", duration.count());
-	printf("Device double function execution time: %f ms\n", cuda_ms_time_d);
-	printf("Faster by %f order of magnitude\n", log10(mag_order_d));
-	printf("Host function execution time: %lld ms\n", duration.count());
+	//double mag_order_d = static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time);
+	double speed_up_d =  static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time_d/5);
+	double speed_up_f = static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time_f/5);
+	double mag_order_d = log10(speed_up_d);
+	double mag_order_f =  log10(speed_up_f);
+	////double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
+	////printf("Host function execution time: %lld ms\n", duration.count() / 5);
+	//printf("Host function execution time: %d ms\n", avg_cpu);
+	//printf("Device double function execution time: %f ms\n", total_cuda_time/5);
+	//printf("Faster by %f order of magnitude\n",mag_order_d);
+	//printf("Host function execution time: %d ms\n", avg_cpu);
 	//printf("Device float  function execution time: %f ms\n", cuda_ms_time_f);
-	//printf("Faster by %f order of magnitude\n", log10(mag_order_f));
+	//printf("Faster by %f order of magnitude\n", mag_order_f);
+	////printf("Faster by %f order of magnitude\n", log10(mag_order_f));
+
 	if (costs_are_equals(cost_cube, v_cost_cube_cuda_d)) printf("Values are similar\n");
 	else printf("Wrong cuda values\n");
-	
+
+	//
 	// Use graph cut to generate depth map 
 	// Cleaner results, long compute time
 	//depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
+	//cv::imwrite("./depth_map_host.png", depth);
 	//depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_d);
-
+	//cv::imwrite("./depth_map_dev_d.png", depth);
+	depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_f);
+	cv::imwrite("./depth_map_dev_f.png", depth);
 	// Find min cost and generate depth map
 	// Faster result, low quality
 	//cv::Mat depth = find_min(cost_cube);
 
 
-	//cv::namedWindow("Depth", cv::WINDOW_NORMAL);
-	//cv::imshow("Depth", depth);
-	//cv::waitKey(0);
+	cv::namedWindow("Depth", cv::WINDOW_NORMAL);
+	cv::imshow("Depth", depth);
+	cv::waitKey(0);
 
 	//cv::imwrite("./depth_map.png", depth);
 	//printf("%f", depth.at<uchar>(0, 0));
