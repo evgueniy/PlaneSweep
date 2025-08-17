@@ -528,14 +528,14 @@ int main()
 	double mag_order_d = log10(speed_up_d);
 	double mag_order_f =  log10(speed_up_f);
 	////double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
-	////printf("Host function execution time: %lld ms\n", duration.count() / 5);
-	//printf("Host function execution time: %d ms\n", avg_cpu);
-	//printf("Device double function execution time: %f ms\n", total_cuda_time/5);
-	//printf("Faster by %f order of magnitude\n",mag_order_d);
-	//printf("Host function execution time: %d ms\n", avg_cpu);
-	//printf("Device float  function execution time: %f ms\n", cuda_ms_time_f);
-	//printf("Faster by %f order of magnitude\n", mag_order_f);
-	////printf("Faster by %f order of magnitude\n", log10(mag_order_f));
+	//printf("Host function execution time: %lld ms\n", duration.count() / 5);
+	printf("Host function execution time: %lld ms\n", duration.count());
+	printf("Device double function execution time: %f ms\n", total_cuda_time_d/5);
+	printf("Faster by %f order of magnitude\n",mag_order_d);
+	printf("Host function execution time: %lld ms\n", duration.count());
+	printf("Device float  function execution time: %f ms\n", total_cuda_time_f/5);
+	printf("Faster by %f order of magnitude\n", mag_order_f);
+	//printf("Faster by %f order of magnitude\n", log10(mag_order_f));
 
 	if (costs_are_equals(cost_cube, v_cost_cube_cuda_d)) printf("Values are similar\n");
 	else printf("Wrong cuda values\n");
