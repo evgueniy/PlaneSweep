@@ -89,11 +89,11 @@ std::vector<cv::Mat> sweeping_plane(cam const ref, std::vector<cam> const &cam_v
 		if (cam.name == ref.name)
 			continue;
 
-		//std::cout << "Cam: " << cam.name << std::endl;
+		std::cout << "Cam: " << cam.name << std::endl;
 		// For each pixel and candidate: (i) calculate projection index, (ii) calculate cost against reference, (iii) store minimum cost
 		for (int zi = 0; zi < ZPlanes; zi++)
 		{
-			//std::cout << "Plane " << zi << std::endl;
+			std::cout << "Plane " << zi << std::endl;
 			for (int y = 0; y < ref.height; y++)
 			{
 				for (int x = 0; x < ref.width; x++)
@@ -429,8 +429,8 @@ int main()
 	bool copySucess = copyDataForDevice(cam_vector,p_ref, p_cam, luma, 0);
 	if (copySucess) {
 		printf("All values are correctly copied!\n");
-		for (int i = 0; i < 21; ++i) p_ref_f[i] = static_cast<float>(p_ref[i]);
-		for (int i = 0; i < 63; ++i) p_cam_f[i] = static_cast<float>(p_cam[i]);
+		//for (int i = 0; i < 21; ++i) p_ref_f[i] = static_cast<float>(p_ref[i]);
+		//for (int i = 0; i < 63; ++i) p_cam_f[i] = static_cast<float>(p_cam[i]);
 	}
 	else {
 		printf("Error in value copy\n");
@@ -438,14 +438,14 @@ int main()
 	// calling CUDAfunction sweeping plane
 	cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
 	//cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
-	cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
+	//cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
 	for (int zi = 0; zi < ZPlanes; zi++){
 		v_cost_cube_cuda_d[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
-		v_cost_cube_cuda_f[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
+		//v_cost_cube_cuda_f[zi] = cv::Mat(ref.height, ref.width, CV_32FC1, 255.);
 		for (int y = 0; y < height; y++){
 			for (int x = 0; x < width; x++){
 				v_cost_cube_cuda_d[zi].at<float>(y, x) = cost_cube_cuda_d[y * width + x + (zi * width * height)];
-				v_cost_cube_cuda_f[zi].at<float>(y, x) = cost_cube_cuda_f[y * width + x + (zi * width * height)];
+				//v_cost_cube_cuda_f[zi].at<float>(y, x) = cost_cube_cuda_f[y * width + x + (zi * width * height)];
 			}
 		}
 	}
@@ -458,32 +458,31 @@ int main()
 	auto stop = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
 	double mag_order_d = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_d);
-	double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
+	//double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
 	printf("Host function execution time: %lld ms\n", duration.count());
 	printf("Device double function execution time: %f ms\n", cuda_ms_time_d);
 	printf("Faster by %f order of magnitude\n", log10(mag_order_d));
 	printf("Host function execution time: %lld ms\n", duration.count());
-	printf("Device float  function execution time: %f ms\n", cuda_ms_time_f);
-	printf("Faster by %f order of magnitude\n", log10(mag_order_f));
+	//printf("Device float  function execution time: %f ms\n", cuda_ms_time_f);
+	//printf("Faster by %f order of magnitude\n", log10(mag_order_f));
 	if (costs_are_equals(cost_cube, v_cost_cube_cuda_d)) printf("Values are similar\n");
 	else printf("Wrong cuda values\n");
 	
 	// Use graph cut to generate depth map 
 	// Cleaner results, long compute time
 	//depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
-	depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_d);
+	//depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_d);
 
 	// Find min cost and generate depth map
 	// Faster result, low quality
 	//cv::Mat depth = find_min(cost_cube);
 
 
-	cv::namedWindow("Depth", cv::WINDOW_NORMAL);
-	cv::imshow("Depth", depth);
-	cv::waitKey(0);
+	//cv::namedWindow("Depth", cv::WINDOW_NORMAL);
+	//cv::imshow("Depth", depth);
+	//cv::waitKey(0);
 
-	cv::imwrite("./depth_map.png", depth);
-	end:
+	//cv::imwrite("./depth_map.png", depth);
 	//printf("%f", depth.at<uchar>(0, 0));
 	delete[] luma;
 	return 0;
