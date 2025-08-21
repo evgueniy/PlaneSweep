@@ -489,13 +489,13 @@ int main()
 	}
 	// calling CUDAfunction sweeping plane double
 	for (int i = 0; i < NRUN; ++i) {
-		cost_cube_cuda_d = wrap_sweeping_plane_device_3d(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
+		cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
 		total_cuda_time_d += cuda_ms_time_d;
 	} 
 	
 	// calling CUDAfunction sweeping plane float
 	for (int i = 0; i < NRUN; ++i) {
-		cost_cube_cuda_f = wrap_sweeping_plane_device_3d(p_ref_f, p_cam_f, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
+		cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
 		total_cuda_time_f += cuda_ms_time_f;
 	}
 	if (NRUN == 1) return 0;
@@ -520,8 +520,8 @@ int main()
 	//const long  avg_cpu = 270201; // computed over 5 time and kepts here because it is really long to compute
 	auto start = std::chrono::high_resolution_clock::now();
 	////for(int i  = 0; i<5; ++i) cost_cube = sweeping_plane(ref, cam_vector, 5); //used to do an avg of execution time
-	//cost_cube = load_or_compute_cost_cube("cost_cube.cache", ref, cam_vector, 5);
-	cost_cube = sweeping_plane(ref, cam_vector, 5);
+	cost_cube = load_or_compute_cost_cube("cost_cube.cache", ref, cam_vector, 5);
+	//cost_cube = sweeping_plane(ref, cam_vector, 5);
 	auto stop = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
 	//double mag_order_d = static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time);

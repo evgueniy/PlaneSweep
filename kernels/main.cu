@@ -65,12 +65,13 @@ __global__ void sweeping_plane_device_opti(const uint8_t* __restrict__ luma, flo
             {
                 for (int l = -window / 2; l <= window / 2; l++)
                 {
-                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
-
                     int proj_x_win = (int)x_proj + l;
                     int proj_y_win = (int)y_proj + k;
+                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height || proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height)  continue;
 
-                    if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
+                    
+
+                    //if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
                     // Y
                     int offset = cam * width * height;
                     cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
@@ -138,12 +139,13 @@ __global__ void sweeping_plane_device_opti_float(const uint8_t* __restrict__ lum
             {
                 for (int l = -window / 2; l <= window / 2; l++)
                 {
-                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
-
                     int proj_x_win = (int)x_proj + l;
                     int proj_y_win = (int)y_proj + k;
+                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height || proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height)  continue;
 
-                    if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
+
+
+                    //if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
                     // Y
                     int offset = cam * width * height;
                     cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
@@ -281,12 +283,13 @@ __global__ void sweeping_plane_device_standard(const uint8_t* __restrict__ luma,
             {
                 for (int l = -window / 2; l <= window / 2; l++)
                 {
-                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
-
                     int proj_x_win = (int)x_proj + l;
                     int proj_y_win = (int)y_proj + k;
+                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height || proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height)  continue;
 
-                    if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
+
+
+                    //if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
                     // Y
                     int offset = cam * width * height;
                     cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
@@ -349,13 +352,17 @@ __global__ void sweeping_plane_device_old_float(const uint8_t* luma, float* __re
                 {
                     if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
 
-                    int proj_x_win = (int)x_proj + l;
-                    int proj_y_win = (int)y_proj + k;
-
-                    if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
+                    if (idx_x + l < 0 || idx_x + l >= width)
+                        continue;
+                    if (idx_y + k < 0 || idx_y + k >= height)
+                        continue;
+                    if (x_proj + l < 0 || x_proj + l >= width)
+                        continue;
+                    if (y_proj + k < 0 || y_proj + k >= height)
+                        continue;
                     // Y
                     int offset = cam * width * height;
-                    cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
+                    cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[((int)y_proj + k) * width + ((int)x_proj + l) + offset]);
                     cc += 1.0f;
                 }
             }
@@ -413,12 +420,13 @@ __global__ void sweeping_plane_device_float(const uint8_t* luma, float* __restri
             {
                 for (int l = -window / 2; l <= window / 2; l++)
                 {
-                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
-
                     int proj_x_win = (int)x_proj + l;
                     int proj_y_win = (int)y_proj + k;
+                    if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height || proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height)  continue;
 
-                    if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
+
+
+                    //if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
                     // Y
                     int offset = cam * width * height;
                     cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
@@ -636,7 +644,7 @@ float* wrap_sweeping_plane_device(T* h_ref_cam, T* h_cams, uint8_t* h_luma, cons
         cudaMemcpyHostToDevice));
 
     // launch configuration: one thread per (x,y)
-    dim3 threads(128,1);
+    dim3 threads(16,16);
     dim3 blocks(divUp(width, threads.x),
         divUp(height, threads.y));
     int tile_width = blocks.x + window - 1;
@@ -744,13 +752,13 @@ __global__ void sweeping_plane_device_3d_opti_float(const uint8_t* __restrict__ 
         {
             for (int l = -window / 2; l <= window / 2; l++)
             {
-                if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
-
                 int proj_x_win = (int)x_proj + l;
                 int proj_y_win = (int)y_proj + k;
+                if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height || proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height)  continue;
 
-                if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
 
+
+                //if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
                 // Y
                 int offset = cam * width * height;
                 cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
@@ -818,13 +826,13 @@ __global__ void sweeping_plane_device_3d_opti(const uint8_t* __restrict__ luma, 
         {
             for (int l = -window / 2; l <= window / 2; l++)
             {
-                if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height)  continue;
-
                 int proj_x_win = (int)x_proj + l;
                 int proj_y_win = (int)y_proj + k;
+                if (idx_x + l < 0 || idx_x + l >= width || idx_y + k < 0 || idx_y + k >= height || proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height)  continue;
 
-                if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
 
+
+                //if (proj_x_win < 0 || proj_x_win >= width || proj_y_win < 0 || proj_y_win >= height) continue;
                 // Y
                 int offset = cam * width * height;
                 cost += fabsf(luma[(idx_y + k) * width + (idx_x + l)] - luma[(proj_y_win)*width + (proj_x_win)+offset]);
@@ -1106,7 +1114,7 @@ float* wrap_sweeping_plane_device_3d(T* h_ref_cam, T* h_cams, uint8_t* h_luma, c
 
     cudaEventRecord(start);
     if constexpr (std::is_same_v<T, double>) {
-        sweeping_plane_device_3d_shared << <blocks, threads, shared_mem_size >> > (
+        sweeping_plane_device_3d_opti << <blocks, threads >> > (
             d_luma,
             d_cost_cube,
             height,
@@ -1117,7 +1125,7 @@ float* wrap_sweeping_plane_device_3d(T* h_ref_cam, T* h_cams, uint8_t* h_luma, c
             );
     }
     else {
-        sweeping_plane_device_3d_shared_float << <blocks, threads, shared_mem_size >> > (
+        sweeping_plane_device_3d_opti_float << <blocks, threads >> > (
             d_luma,
             d_cost_cube,
             height,
