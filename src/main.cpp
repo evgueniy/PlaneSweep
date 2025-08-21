@@ -473,6 +473,7 @@ int main()
 	float p_ref_f[21];
 	double p_cam[63];
 	float p_cam_f[63];
+	constexpr int NRUN = 1;
 	uint8_t* luma = new uint8_t[width*height*4];
 	std::vector<cv::Mat> v_cost_cube_cuda_d(ZPlanes), v_cost_cube_cuda_f(ZPlanes);
 	float* cost_cube_cuda_d, *cost_cube_cuda_f;
@@ -487,16 +488,17 @@ int main()
 		printf("Error in value copy\n");
 	}
 	// calling CUDAfunction sweeping plane double
-	for (int i = 0; i < 5; ++i) {
-		cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
+	for (int i = 0; i < NRUN; ++i) {
+		cost_cube_cuda_d = wrap_sweeping_plane_device_3d(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
 		total_cuda_time_d += cuda_ms_time_d;
 	} 
-
+	
 	// calling CUDAfunction sweeping plane float
-	for (int i = 0; i < 5; ++i) {
-		cost_cube_cuda_f = wrap_sweeping_plane_device(p_ref_f, p_cam_f, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
+	for (int i = 0; i < NRUN; ++i) {
+		cost_cube_cuda_f = wrap_sweeping_plane_device_3d(p_ref_f, p_cam_f, luma, width, height, ZPlanes, cam_vector.size(), 5, cuda_ms_time_f);
 		total_cuda_time_f += cuda_ms_time_f;
 	}
+	if (NRUN == 1) return 0;
 	//cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height, ZPlanes, cam_vector.size(), 5, total_cuda_time);
 	//total_cuda_time *= 5;
 	//cost_cube_cuda_d = wrap_sweeping_plane_device(p_ref, p_cam, luma, width, height , ZPlanes, cam_vector.size(), 5, cuda_ms_time_d);
@@ -523,17 +525,17 @@ int main()
 	auto stop = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
 	//double mag_order_d = static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time);
-	double speed_up_d =  static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time_d/5);
-	double speed_up_f = static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time_f/5);
+	double speed_up_d =  static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time_d/ NRUN);
+	double speed_up_f = static_cast<double>(duration.count()) / static_cast<double>(total_cuda_time_f/ NRUN);
 	double mag_order_d = log10(speed_up_d);
 	double mag_order_f =  log10(speed_up_f);
 	////double mag_order_f = static_cast<double>(duration.count()) / static_cast<double>(cuda_ms_time_f);
 	//printf("Host function execution time: %lld ms\n", duration.count() / 5);
 	printf("Host function execution time: %lld ms\n", duration.count());
-	printf("Device double function execution time: %f ms\n", total_cuda_time_d/5);
+	printf("Device double function execution time: %f ms\n", total_cuda_time_d/ NRUN);
 	printf("Faster by %f order of magnitude\n",mag_order_d);
 	printf("Host function execution time: %lld ms\n", duration.count());
-	printf("Device float  function execution time: %f ms\n", total_cuda_time_f/5);
+	printf("Device float  function execution time: %f ms\n", total_cuda_time_f/ NRUN);
 	printf("Faster by %f order of magnitude\n", mag_order_f);
 	//printf("Faster by %f order of magnitude\n", log10(mag_order_f));
 
@@ -543,10 +545,10 @@ int main()
 	//
 	// Use graph cut to generate depth map 
 	// Cleaner results, long compute time
-	//depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
-	//cv::imwrite("./depth_map_host.png", depth);
-	//depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_d);
-	//cv::imwrite("./depth_map_dev_d.png", depth);
+	depth = depth_estimation_by_graph_cut_sWeight(cost_cube);
+	cv::imwrite("./depth_map_host.png", depth);
+	depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_d);
+	cv::imwrite("./depth_map_dev_d.png", depth);
 	depth = depth_estimation_by_graph_cut_sWeight(v_cost_cube_cuda_f);
 	cv::imwrite("./depth_map_dev_f.png", depth);
 	// Find min cost and generate depth map

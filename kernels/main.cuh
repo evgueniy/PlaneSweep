@@ -21,5 +21,9 @@ template<class T>
 float* wrap_sweeping_plane_device(T * h_ref_cam, T * h_cam, uint8_t * luma,
                                 const int width, const int height, const int n_planes, const int n_cam, int window, float& cuda_ms_time);
 
+template<class T>
+float* wrap_sweeping_plane_device_3d(T * h_ref_cam, T * h_cams, uint8_t * h_luma, const int width, const int height,
+    const int n_planes, const int n_cam, int window, float& cuda_ms_time);
+
 // parameters array 
 //extern __constant__ __device__ double cam_param_array[P_SIZE];
